@@ -16,6 +16,9 @@ const {
   createError,
   createServiceToken,
 } = require('./src');
+const { throwIfCommandIsNotAllowed } = require('ioredis-mock/lib/command');
+const { setHttpCacheHeaders } = require('./src/middleware');
+const { request } = require('http');
 const { JWT_EXPIRES_IN, JWT_ISSUER, JWT_AUDIENCE, SECRET } = process.env;
 
 const createSatelliteInstance = (options) => {
@@ -880,5 +883,35 @@ describe('createServiceToken()', () => {
 
     const currentDateSeconds = Date.now() / 1000;
     expect(decoded.exp).toBeGreaterThan(currentDateSeconds);
+
+    describe('Sets headers for a Response object', () => {
+      test('Should set the object to Level 3 Caching', () => {
+        const service = createSatelliteInstance({
+          name: 'header-test',
+        });
+        router = service.router;
+        router.get('/public', (req, res) => {
+          setHttpHeaders({ res: res, level: 3 });
+          expect(res.headers.get('Access-Control-Max-Age')).toBe('2592000');
+        });
+      });
+
+      test('Should allow us to set options unrelated to Cache-Control', () => {
+        const service = createSatelliteInstance({
+          name: 'header-test-2',
+        });
+        router = service.router;
+        router.get('/public', (req, res) => {
+          setHttpHeaders({
+            res: res,
+            options: { 'content-type': 'image/jpeg', 'x-content-type-options': 'nosniff' },
+            level: 3,
+          });
+          expect(res.headers.get('Access-Control-Max-Age')).toBe('2592000');
+          expect(res.headers.get('Content-Type')).toBe('image/jpeg');
+          expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+        });
+      });
+    });
   });
 });

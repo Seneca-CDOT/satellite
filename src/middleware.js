@@ -1,6 +1,8 @@
 const jwt = require('express-jwt');
 const createError = require('http-errors');
 const logger = require('./logger');
+const ms = require('ms');
+const express = require('express');
 
 // JWT Validation Middleware. A user must have a valid bearer token.
 // We expect to get JWT config details via the env.
@@ -112,6 +114,62 @@ function errorHandler(err, req, res, next) {
   }
 }
 
+function cache(res) {
+  this.forever = (res) => {
+    const t = ms('1y');
+    res.headers.set(`Cache-Control`, `public, max-age=${t}, immutable`);
+  }; // Forever Function
+
+  /*
+no-store is needed with max-age=0
+we don't want to serve stale resources when Telescope is down.
+see: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control#requiring_revalidation
+*/
+  this.never = (res) => {
+    res.headers.set('Cache-Control', 'public, no-store, max-age=0');
+  };
+
+  this.duration = (time, res) => {
+    const t = ms(time);
+    res.headers.set('Cache-Control', `public, max-age=${t}`);
+  };
+
+  this.staleFor = (time, res) => {
+    if (res.headers.get('Cache-Control') !== null) {
+      const t = ms(time);
+      res.headers.append('Cache-Control', `max-stale=${t}`);
+    } else {
+      next(
+        createError(
+          428,
+          'You do not have a Cache-Control header, this function is used for attributes that contain the header. '
+        )
+      );
+    }
+  };
+
+  this.freshFor = (time, res) => {
+    if (res.headers.get('Cache-Control') !== null) {
+      const t = ms(time);
+      res.headers.append('Cache-Control', `min-fresh=${t}`);
+    } else {
+      next(
+        createError(
+          428,
+          'You do not have a Cache-Control header, this function is used for attributes that contain the header. '
+        )
+      );
+    }
+  };
+  return {
+    forever: this.forever,
+    never: this.never,
+    duration: this.duration,
+    staleFor: this.staleFor,
+    freshFor: this.freshFor,
+  };
+}
 module.exports.isAuthenticated = isAuthenticated;
 module.exports.isAuthorized = isAuthorized;
 module.exports.errorHandler = errorHandler;
+module.exports.cache = cache;
